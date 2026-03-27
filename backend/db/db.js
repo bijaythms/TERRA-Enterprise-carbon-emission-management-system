@@ -15,11 +15,38 @@ const pool = process.env.DATABASE_URL
     })
   : new Pool(config)
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function waitForDatabaseReady() {
+  const maxAttempts = Number(process.env.DB_CONNECT_RETRIES || 20)
+  const retryDelayMs = Number(process.env.DB_CONNECT_DELAY_MS || 5000)
+  let lastError = null
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await pool.query("SELECT 1")
+      return
+    } catch (err) {
+      lastError = err
+      console.warn(`Database connection attempt ${attempt}/${maxAttempts} failed: ${err.message}`)
+      if (attempt < maxAttempts) {
+        await sleep(retryDelayMs)
+      }
+    }
+  }
+
+  throw lastError
+}
+
 async function query(text, params = []) {
   return pool.query(text, params)
 }
 
 async function initDb() {
+  await waitForDatabaseReady()
+
   await query(`
     CREATE TABLE IF NOT EXISTS companies (
       company_id SERIAL PRIMARY KEY,
@@ -121,4 +148,5 @@ module.exports = {
   query,
   initDb,
   closeDb,
+  waitForDatabaseReady,
 }
