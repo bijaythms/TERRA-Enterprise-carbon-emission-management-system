@@ -58,35 +58,25 @@ git push -u origin main
 ghcr.io/<your-username-or-org>/<repo-name>/terra-backend
 ```
 
-5. To make the deploy and final smoke-check stages work on Render, add these GitHub repository secrets:
-- `RENDER_DEPLOY_HOOK_URL`
-- `RENDER_SERVICE_URL`
+5. To make the deploy and final smoke-check stages work through GitHub Actions runner:
+- install a self-hosted GitHub Actions runner on the machine where you want deployment
+- make sure Docker Desktop or Docker Engine is installed on that runner machine
+- keep the runner labels matching the workflow:
+```text
+self-hosted, windows
+```
 
-## Deploy On Render
+6. The deploy stage runs directly on the self-hosted runner and executes:
+```text
+docker compose down
+docker compose up --build -d
+```
 
-This project is now prepared for Render Blueprint deployment with:
-
-- [render.yaml](/D:/projectdevops/terra/render.yaml)
-- [server.js](/D:/projectdevops/terra/backend/server.js) using the Render `PORT`
-- [db.js](/D:/projectdevops/terra/backend/db/db.js) supporting `DATABASE_URL`
-
-Render setup:
-
-1. Push this project to GitHub.
-2. In Render, click `New +` -> `Blueprint`.
-3. Select your GitHub repository.
-4. Render will detect [render.yaml](/D:/projectdevops/terra/render.yaml) and create:
-   - one web service: `terra-web`
-   - one PostgreSQL database: `terra-db`
-5. Add `OPENAI_API_KEY` later only if you want LLM advisor support.
-6. Deploy the Blueprint.
-
-After deploy, your app will be available on the Render web service URL.
-
-Official Render references used:
-- [Create and Connect to Render Postgres](https://render.com/docs/databases)
-- [Default Environment Variables](https://render.com/docs/environment-variables)
-- [Blueprint YAML Reference](https://render.com/docs/blueprint-spec)
+7. The final smoke-check stage validates:
+```text
+http://localhost:5000/health
+http://localhost:5000/
+```
 
 ## Run Without Docker
 

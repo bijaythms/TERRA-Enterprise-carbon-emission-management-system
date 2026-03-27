@@ -107,31 +107,34 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
 
   deploy:
-    runs-on: ubuntu-latest
+    runs-on:
+      - self-hosted
+      - windows
     needs: docker-build
     if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
 
     steps:
-      - name: Trigger Render deploy
-        if: ${{ secrets.RENDER_DEPLOY_HOOK_URL != '' }}
-        run: curl -fsSL -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Skip deploy when hook is missing
-        if: ${{ secrets.RENDER_DEPLOY_HOOK_URL == '' }}
-        run: echo "RENDER_DEPLOY_HOOK_URL is not set. Skipping Render deploy trigger."
+      - name: Deploy with Docker Compose on self-hosted runner
+        shell: pwsh
+        run: |
+          docker compose down
+          docker compose up --build -d
 
   selenium-test:
-    runs-on: ubuntu-latest
+    runs-on:
+      - self-hosted
+      - windows
     needs: deploy
     if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
 
     steps:
-      - name: Smoke check deployed app
-        if: ${{ secrets.RENDER_SERVICE_URL != '' }}
+      - name: Smoke check deployed app on runner
+        shell: pwsh
         run: |
-          curl -fsSL "${{ secrets.RENDER_SERVICE_URL }}/health"
-          curl -fsSL "${{ secrets.RENDER_SERVICE_URL }}"
-
-      - name: Skip smoke test when service URL is missing
-        if: ${{ secrets.RENDER_SERVICE_URL == '' }}
-        run: echo "RENDER_SERVICE_URL is not set. Skipping deployed smoke test."
+          $health = Invoke-WebRequest -UseBasicParsing http://localhost:5000/health
+          if ($health.StatusCode -ne 200) { throw "Health check failed" }
+          $home = Invoke-WebRequest -UseBasicParsing http://localhost:5000/
+          if ($home.StatusCode -ne 200) { throw "Homepage check failed" }
