@@ -1,0 +1,137 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - develop
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository }}/terra-backend
+
+jobs:
+  backend-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Validate backend files
+        run: |
+          node --check backend/server.js
+          node --check backend/db/db.js
+          node --check backend/controllers/authController.js
+          node --check backend/controllers/adminController.js
+          node --check backend/controllers/emissionsController.js
+          node --check backend/controllers/sustainabilityController.js
+          node --check backend/controllers/dashboardController.js
+          node --check backend/controllers/benchmarkController.js
+          node --check backend/controllers/reportController.js
+          node --check backend/services/authService.js
+          node --check backend/services/advisorService.js
+
+      - name: Validate Docker Compose
+        run: docker compose config
+
+  frontend-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate frontend structure
+        shell: bash
+        run: |
+          test -f frontend/index.html
+          grep -q "<!DOCTYPE html>" frontend/index.html
+          grep -q "Terra" frontend/index.html
+
+  docker-build:
+    runs-on: ubuntu-latest
+    needs:
+      - backend-test
+      - frontend-test
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: docker-build
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+
+    steps:
+      - name: Trigger Render deploy
+        if: ${{ secrets.RENDER_DEPLOY_HOOK_URL != '' }}
+        run: curl -fsSL -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+
+      - name: Skip deploy when hook is missing
+        if: ${{ secrets.RENDER_DEPLOY_HOOK_URL == '' }}
+        run: echo "RENDER_DEPLOY_HOOK_URL is not set. Skipping Render deploy trigger."
+
+  selenium-test:
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+
+    steps:
+      - name: Smoke check deployed app
+        if: ${{ secrets.RENDER_SERVICE_URL != '' }}
+        run: |
+          curl -fsSL "${{ secrets.RENDER_SERVICE_URL }}/health"
+          curl -fsSL "${{ secrets.RENDER_SERVICE_URL }}"
+
+      - name: Skip smoke test when service URL is missing
+        if: ${{ secrets.RENDER_SERVICE_URL == '' }}
+        run: echo "RENDER_SERVICE_URL is not set. Skipping deployed smoke test."

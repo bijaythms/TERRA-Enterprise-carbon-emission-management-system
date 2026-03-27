@@ -1,0 +1,22 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "Terra Sustainability Platform - PostgreSQL backend",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "seed": "node seed.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "body-parser": "^2.2.2",
+    "chartjs-node-canvas": "^5.0.0",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "pdfkit": "^0.17.2",
+    "pg": "^8.16.3"
+  }
+}
